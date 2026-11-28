@@ -2,35 +2,37 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\LoginRequest;
+use App\Http\Requests\RegisterRequest;
 use App\Models\User;
+use App\Traits\ApiResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    public function register(Request $request)
+    use ApiResponse;
+
+    private function userData(User $user): array
     {
-        $data = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users',
-            'password' => 'required|min:8|confirmed',
-        ]);
-
-        $user = User::create($data);
-        $token = $user->createToken('mobile')->plainTextToken;
-
-        return response()->json(['user' => $user, 'token' => $token], 201);
+        return $user->only(['id', 'name', 'email', 'role', 'phone']);
     }
 
-    public function login(Request $request)
+    public function register(RegisterRequest $request): JsonResponse
     {
-        $request->validate([
-            'email' => 'required|email',
-            'password' => 'required',
-        ]);
+        $user = User::create($request->validated())->refresh();
 
-        $user = User::where('email', $request->email)->first();
+        return $this->ok([
+            'user' => $this->userData($user),
+            'token' => $user->createToken('mobile')->plainTextToken,
+        ], 'Registrasi berhasil', 201);
+    }
+
+    public function login(LoginRequest $request): JsonResponse
+    {
+        $user = User::query()->where('email', $request->email)->first();
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
@@ -38,21 +40,21 @@ class AuthController extends Controller
             ]);
         }
 
-        return response()->json([
-            'user' => $user,
+        return $this->ok([
+            'user' => $this->userData($user),
             'token' => $user->createToken('mobile')->plainTextToken,
-        ]);
+        ], 'Login berhasil');
     }
 
-    public function me(Request $request)
+    public function me(Request $request): JsonResponse
     {
-        return response()->json($request->user());
+        return $this->ok($this->userData($request->user()));
     }
 
-    public function logout(Request $request)
+    public function logout(Request $request): JsonResponse
     {
         $request->user()->currentAccessToken()->delete();
 
-        return response()->json(['message' => 'Logged out']);
+        return $this->ok(null, 'Logout berhasil');
     }
 }
